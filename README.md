@@ -4,10 +4,10 @@ Hey, there! I specialize in animating, some modeling (excluding characters), and
 
 Skills & Strengths
 
-• UI/UX Design: Smooth, clean designs in multiple styles (studs, cartoony, etc.) 🎨
-• Animation: R6 & R15 rigs, including animals. Characters must be pre-rigged 🕺
-• Modeling: Low-poly items, weapons, and character accessories (no full characters or buildings) 🔨
-• Scripting: Modular, easy-to-integrate systems for gameplay, UI, and more 💻
+• UI/UX Design: Smooth, clean designs in multiple styles (studs, cartoony, etc.)
+• Animation: R6 & R15 rigs, including animals. Characters must be pre-rigged
+• Modeling: Low-poly items, weapons, and character accessories (no full characters or buildings)
+• Scripting: Modular, easy-to-integrate systems for gameplay, UI, and more
 
 Portfolio Highlights
 • W.I.P (Going to add stuff after finishing this github)
