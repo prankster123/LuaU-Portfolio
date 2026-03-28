@@ -1,0 +1,225 @@
+-- // Services \\ --
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+-- // Variables \\ --
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+local Shared = ServerScriptService:WaitForChild("Shared")
+
+-- // Modules \\ --
+local LagComp = require(game.ServerScriptService:WaitForChild("Shared"):WaitForChild("LagCompensation"))
+local GlobalServer = require(game.ServerScriptService:WaitForChild("Init"):WaitForChild("Global"))
+local WeaponsConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Configs"):WaitForChild("Weapons"))
+local GlobalConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Configs"):WaitForChild("GlobalConfig"))
+
+local WalkspeedAntiCheat = require(script.Parent.Parent:WaitForChild("AntiCheat"):WaitForChild("Walkspeed"))
+local BlockEffect = require(Shared:WaitForChild("BlockEffect"))
+
+-- // Remotes \\ --
+local MeleeAttack = RemotesFolder:WaitForChild("Events"):WaitForChild("MeleeAttack")
+local TriggerEffect = RemotesFolder:WaitForChild("Events"):WaitForChild("TriggerEffect")
+
+LagComp:StartTracking()
+
+local module = {
+	LastAttack = {
+		Light = {},
+		Heavy = {}
+	}
+}
+
+function module:Init()
+	Players.PlayerRemoving:Connect(function(player)
+		module.LastAttack.Light[player] = nil
+		module.LastAttack.Heavy[player] = nil
+	end)
+	
+	MeleeAttack.OnServerEvent:Connect(function(player, data)
+		local playerData = GlobalServer.functions.getData(player)
+		local equippedWeapon = nil
+
+		for weaponName, weaponData in playerData.Weapons do
+			if weaponData.Equipped then
+				equippedWeapon = weaponName
+				break
+			end
+		end
+
+		if not equippedWeapon then return end
+
+		local weaponData = WeaponsConfig[equippedWeapon]
+
+		if not weaponData then return end
+		
+		--print("firing")
+		
+		local params = weaponData.HitboxParams[data.type]
+		if not params then return end
+
+		local now = os.clock()
+
+		local totalTime = params.Windup + params.Active + params.Recovery
+		if self.LastAttack[data.type][player] and now - self.LastAttack[data.type][player] < totalTime then
+			--print("is on cooldown")
+			
+			return
+		end
+		
+		-- weapon effects
+		pcall(function()
+			local weaponSounds = weaponData.Sounds[data.type]
+
+			if weaponSounds then
+				local soundId = weaponSounds[data.animKey]
+
+				if soundId then
+					local sound = Instance.new("Sound")
+					sound.SoundId = soundId
+					sound.Volume = 1
+					sound.Parent = player.Character:WaitForChild("HumanoidRootPart")
+
+					sound:Play()
+
+					sound.Ended:Once(function()
+						sound:Destroy()
+					end)
+				end
+			end
+		end)
+		
+		self.LastAttack[data.type][player] = now
+
+		local latency = math.clamp(now - data.time, 0, 0.25)
+		local startTime = now - latency
+		local activeStart = startTime + params.Windup
+		local activeEnd = activeStart + params.Active
+		
+		local windupRemaining = math.max(0, params.Windup - latency)
+		
+		task.delay(windupRemaining, function()
+			if not player.Parent then return end
+			
+			local alreadyHit = {}
+			local hitResults = {}
+			
+			local wasBlocked = false
+
+			--local debugPart = Instance.new("Part")
+
+			for t = activeStart, activeEnd, params.Step do
+				local attackerCF = LagComp:GetPastCFrame(player, t)
+				if not attackerCF then continue end
+
+				local hitboxCF = attackerCF * params.Offset
+
+				--[[debugPart.Anchored = true
+				debugPart.CanCollide = false
+				debugPart.Size = params.Size
+				debugPart.CFrame = hitboxCF
+				debugPart.Transparency = 0.5
+				debugPart.Color = Color3.fromRGB(89, 255, 0)
+				debugPart.Parent = workspace]]
+
+				for _, target in pairs(Players:GetPlayers()) do
+					if target == player then continue end
+					if alreadyHit[target] then continue end
+
+					local targetCF = LagComp:GetPastCFrame(target, t)
+					if not targetCF then continue end
+
+					-- distance check
+					local distance = (targetCF.Position - attackerCF.Position).Magnitude
+					if distance > params.MaxRange then continue end
+
+					-- angle check
+					local forward = attackerCF.LookVector
+					local direction = (targetCF.Position - attackerCF.Position).Unit
+					local angle = math.deg(math.acos(forward:Dot(direction)))
+
+					if angle > params.MaxAngle then continue end
+
+					-- box check
+					local relative = hitboxCF:PointToObjectSpace(targetCF.Position)
+					local half = params.Size / 2
+
+					if math.abs(relative.X) <= half.X
+						and math.abs(relative.Y) <= half.Y
+						and math.abs(relative.Z) <= half.Z then
+						
+						local character = target.Character
+						
+						if character:GetAttribute("Blocking") == true then
+							wasBlocked = true
+							
+							break
+						end
+						
+						alreadyHit[target] = true
+						table.insert(hitResults, target)
+
+						if #hitResults >= params.MaxTargets then
+							break
+						end
+					end
+				end
+			end
+
+			--[[task.delay(2, function()
+				debugPart:Destroy()
+			end)]]
+			
+			local hitIndicatorData = {}
+			local eliminatedPlayer = nil
+			
+			if not wasBlocked then
+				for _, target in pairs(hitResults) do
+					local char = target.Character
+					if char then
+						local hum = char:FindFirstChildOfClass("Humanoid")
+						if hum then
+							local Damage = weaponData.Damage[data.type]
+							
+							hum:TakeDamage(Damage)
+							
+							table.insert(hitIndicatorData, {target = target, damage = Damage, wasKilled = hum.Health <= 0, heavyAttack = data.type == "Heavy"})
+						end
+					end
+				end
+			else
+				TriggerEffect:FireClient(player, "parried")
+				
+				if player.Character and player.Character:WaitForChild("Humanoid") then
+					pcall(function()
+						BlockEffect:PlayParryEffect(player)
+						
+						player:SetAttribute("Parried", true)
+						WalkspeedAntiCheat:UpdateWalkspeed(player, "walkspeed", "parryStart", 5)
+						player.Character:WaitForChild("Humanoid").WalkSpeed = 5
+						
+						task.wait(GlobalConfig.ParryStunTime)
+						
+						player:SetAttribute("Parried", false)
+						WalkspeedAntiCheat:UpdateWalkspeed(player, "walkspeed", "parryEnd", weaponData.Walkspeed.Base)
+						player.Character:WaitForChild("Humanoid").WalkSpeed = weaponData.Walkspeed.Base
+					end)
+				end
+			end
+			
+			if #hitIndicatorData > 0 then
+				TriggerEffect:FireClient(player, "hit indicator", hitIndicatorData)
+			end
+			
+			--[[TriggerEffect:FireClient(player, "hit indicator", {
+				[1] = {
+					target = workspace.Test,
+					damage = 10,
+					wasKilled = true,
+					heavyAttack = math.random(1, 2) == 1
+				}
+			}) -- This was to test the visuals]]
+		end)
+	end)
+end
+
+return module
