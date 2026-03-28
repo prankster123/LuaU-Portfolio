@@ -1,8 +1,3 @@
-## How it works
-  • Client sends the remote event to update their walkspeed based on an action, the server chooses final walkspeed.
-  • Client will set their walkspeed first to remove delay effects
-  • Server will follow after, and if a player is moving too fast on the horizontal axis, they are teleported to their previous position
-
 -- // Services \\ --
 local PlayerService = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -111,6 +106,7 @@ function module:Init()
 	
 	PlayerService.PlayerRemoving:Connect(function(player)
 		module.walkspeedData[player] = nil
+		module.lastPositions[player] = nil
 	end)
 	
 	RunService.Heartbeat:Connect(function(delta)
