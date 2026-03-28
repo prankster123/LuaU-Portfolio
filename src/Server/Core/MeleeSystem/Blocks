@@ -1,0 +1,77 @@
+-- // Services \\ --
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+-- // Variables \\ --
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local Shared = ServerScriptService:WaitForChild("Shared")
+
+-- // Modules \\ --
+local GlobalConfig = require(ModulesFolder:WaitForChild("Configs"):WaitForChild("GlobalConfig"))
+local GlobalServer = require(game.ServerScriptService:WaitForChild("Init"):WaitForChild("Global"))
+local GlobalTools = require(ModulesFolder:WaitForChild("Utils"):WaitForChild("GlobalTools"))
+local WeaponsConfig = require(ModulesFolder:WaitForChild("Configs"):WaitForChild("Weapons"))
+
+local BlockEffect = require(Shared:WaitForChild("BlockEffect"))
+
+-- // Remotes \\ --
+local MeleeBlock = RemotesFolder:WaitForChild("Events"):WaitForChild("MeleeBlock")
+
+local module = {
+	lastBlocks = {}
+}
+
+function module:Init()
+	Players.PlayerRemoving:Connect(function(player)
+		module.lastBlocks[player] = nil
+	end)
+	
+	MeleeBlock.OnServerEvent:Connect(function(player)
+		local playerData = GlobalServer.functions.getData(player)
+		local equippedWeapon = nil
+
+		for weaponName, weaponData in playerData.Weapons do
+			if weaponData.Equipped then
+				equippedWeapon = weaponName
+				break
+			end
+		end
+
+		if not equippedWeapon then return end
+
+		local weaponData = WeaponsConfig[equippedWeapon]
+
+		if not weaponData then return end
+		
+		local currentTick = tick()
+		
+		local lastBlock = module.lastBlocks[player]
+		local blockCooldown = GlobalConfig.BlockCooldown
+		local blockTime = GlobalConfig.BlockDuration
+		
+		if lastBlock and currentTick - lastBlock < blockCooldown then
+			return
+		end
+		
+		local character = player.Character
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		
+		if not humanoid or not humanoidRootPart then return end
+		
+		character:SetAttribute("Blocking", true)
+		BlockEffect:PlayBlockEffect(player)
+		
+		task.delay(blockTime, function()
+			character:SetAttribute("Blocking", false)
+		end)
+		
+		print("blocking server")
+		
+		module.lastBlocks[player] = currentTick
+	end)
+end
+
+return module
