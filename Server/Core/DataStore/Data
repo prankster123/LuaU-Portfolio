@@ -1,0 +1,203 @@
+-- // Services \\ --
+local DataStoreService = game:GetService('DataStoreService')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local BadgeService = game:GetService('BadgeService')
+local Players = game:GetService('Players')
+
+--- // Variables \\ --
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+
+local DataStore = DataStoreService:GetDataStore('PlayerData'..templatesModule.datastoreVersion)
+
+-- // Modules \\ -
+local GlobalServer = require(script.Parent.Global)
+local Templates = require(script.Templates)
+local GoodSignal = require(ModulesFolder:WaitForChild("Services"):WaitForChild("GoodSignal"))
+
+local dataTemplate = Templates.dataTemplate
+local orderedDataTemplate = Templates.orderedDataTemplate
+
+local instances = {
+	['number'] = 'NumberValue',
+	['boolean'] = 'BoolValue',
+}
+
+local module = {}
+
+local function loadData(player, dataStore)
+	local attempts = 0
+	local success, err
+
+	local data
+
+	repeat
+		attempts += 1
+		success, err = pcall(function()
+			data = dataStore:GetAsync(player.UserId)
+		end)
+
+		if success then
+			break
+		else
+			warn('Datastore error, retrying:', player.Name, ' | ', err)
+		end
+	until attempts >= 10
+
+	if attempts >= 10 then
+		player:Kick("Datastore error! Message devs with a screenshot. Error:\n", err)
+		
+		error(string.format(
+			'Module loading error!\nPlayer: %s\nError: %s\DataStore: %s',
+			player.Name,
+			err,
+			dataStore
+			)
+		)
+	end
+
+	return data
+end
+
+local function saveData(player, data, dataStore, ordered)
+	--if ordered == false then
+		--print(data.Weapons)
+	--end
+	
+	if player.UserId <= 0 then
+		return
+	end
+
+	local success, err = pcall(function()
+		if ordered then
+			dataStore:SetAsync(player.UserId, data)
+			return
+		end
+
+		dataStore:UpdateAsync(player.UserId, function(pastData)
+			return data
+		end)
+	end)
+
+	if not success then
+		warn("Failed to save data for "..player.Name..": ".. err)
+	end
+end
+
+local function createStat(player, currencyName, currencyData)
+	local currency = Instance.new(instances[type(currencyData.value)])
+	currency.Name = currencyName
+	currency.Value = currencyData.value
+	currency.Parent = currencyData.public and player.leaderstats or player.Stats
+
+	currencyData.signal = GoodSignal.new()
+	
+	currencyData.signal:Connect(function()
+		currency.Value = currencyData.value
+	end)
+end
+
+function module:PlayerAdded(player)
+	BadgeService:AwardBadgeAsync(player.UserId, 1210585085235023)
+	
+	GlobalServer.players[player] = {}
+	
+	local data = loadData(player, DataStore)or GlobalServer.functions.deepCopyTable(dataTemplate)
+	
+	local playerConfig = GlobalServer.players[player]
+	playerConfig.data = data
+	playerConfig.connections = {}
+
+	local playerData = playerConfig.data
+	GlobalServer.functions.reconcileTable(playerData, dataTemplate)
+
+	playerData.orderedData = {}
+	for orderedDataName, orderedDataConfig in orderedDataTemplate do
+		local orderedDataValue = loadData(player, orderedDataConfig.store) or orderedDataConfig.value
+		
+		playerData.orderedData[orderedDataName] = {
+			value = orderedDataValue,
+			public = orderedDataConfig.public,
+			signal = GoodSignal.new(),
+		}
+	end
+	
+	playerData.LastJoinTime = os.clock()
+	
+	playerConfig.dataLoaded = true
+
+	Instance.new('Folder', player).Name = 'leaderstats'
+	Instance.new('Folder', player).Name = 'Stats'
+	
+	for orderedDataName, orderedData in playerData.orderedData do
+		createStat(player, orderedDataName, orderedData)
+	end
+end
+
+function module:PlayerRemoving(player)
+	local playerConfig = GlobalServer.players[player]
+	local playerData = playerConfig.data
+	
+	for _, connection in playerConfig.connections do
+		connection:Disconnect()
+	end
+	
+	for dataName, data in playerData.orderedData do
+		saveData(
+			player,
+			data.value, 
+			orderedDataTemplate[dataName].store, 
+			true
+		)
+	end
+
+	playerData.orderedData = nil
+	
+	saveData(player, playerData, DataStore, false)
+	
+	DataStore:UpdateAsync(player, function(pastData)
+		return playerConfig.data
+	end)
+	
+	playerConfig = nil
+end
+
+local function stripSignals(tbl)
+	local clean = {}
+	
+	for i, v in pairs(tbl) do
+		if type(v) == "table" then
+			if i ~= "signal" then
+				clean[i] = stripSignals(v)
+			end
+		elseif type(v) ~= "function" then
+			clean[i] = v
+		end
+	end
+	
+	return clean
+end
+
+function module:Init()
+	remotes.Functions.GetData.OnServerInvoke = function(player)
+		local playerConfig = GlobalServer.players[player]
+		
+		if not playerConfig then
+			warn("player config not found for "..player.Name)
+			
+			return dataTemplate
+		end
+		
+		if not playerConfig.dataLoaded then
+			repeat
+				task.wait()
+			until playerConfig.dataLoaded
+		end
+		
+		local playerData = playerConfig.data
+		
+		return stripSignals(playerData)
+	end
+end
+
+return module
