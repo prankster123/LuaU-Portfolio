@@ -1,0 +1,9 @@
+return function(receiptInfo)
+	local player = game:GetService("Players"):GetPlayerByUserId(receiptInfo.PlayerId)
+	
+	if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	
+	print("player bought this!@!@#")
+	
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
