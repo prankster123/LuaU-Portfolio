@@ -1,0 +1,76 @@
+## How it works
+  • Store player positions in the last 1 second
+  • Retrieve a players position based on the delay/target time
+  • This is a simple verison compared to other lag compensations, but works for melee systems
+
+-- // Services \\ --
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local module = {
+	PlayerHistory = {}; -- {time = tick, cframe = their cframe}
+	HeartbeatConn = nil; -- connection
+	PlayerRemovingConn = nil; -- connection
+}
+
+function module:StartTracking()
+	if not self.HeartbeatConn then
+		self.HeartbeatConn = RunService.Heartbeat:Connect(function()
+			local now = os.clock()
+
+			for _, player in pairs(Players:GetPlayers()) do
+				local char = player.Character
+				if not char then continue end
+
+				local root = char:FindFirstChild("HumanoidRootPart")
+				if not root then continue end
+
+				local history = self.PlayerHistory[player]
+				
+				if not history then
+					history = {}
+					self.PlayerHistory[player] = history
+				end
+
+				table.insert(history, {
+					time = now,
+					cframe = root.CFrame
+				})
+
+				-- keep just last one second or else the server will blow up
+				while history[1] and now - history[1].time > 1 do
+					table.remove(history, 1)
+				end
+			end
+		end)
+		
+		self.PlayerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+			self.PlayerHistory[player] = nil
+		end)
+	end
+end
+
+function module:GetPastCFrame(player, targetTime)
+	local history = self.PlayerHistory[player]
+	if not history then return end
+	
+	if history[1] and targetTime < history[1].time then
+		return history[1].cframe
+	end
+
+	for i = 1, #history - 1 do
+		local a = history[i]
+		local b = history[i + 1]
+
+		if a.time <= targetTime and b.time >= targetTime then
+			local alpha = (targetTime - a.time) / (b.time - a.time)
+			return a.cframe:Lerp(b.cframe, alpha)
+		end
+	end
+
+	return history[#history] and history[#history].cframe
+end
+
+return module
+
+-- Made by @TheK1ngJulian
