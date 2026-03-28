@@ -1,0 +1,13 @@
+for _, module in pairs(script:GetChildren()) do
+	if module:IsA("ModuleScript") then
+		local mod = require(module)
+
+		if mod.Init ~= nil then
+			task.spawn(function()
+				mod:Init()
+			end)
+		end
+	end
+end
+
+-- Basic, initializes main systems
