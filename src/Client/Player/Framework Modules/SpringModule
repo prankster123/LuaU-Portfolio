@@ -1,0 +1,59 @@
+-- // Constants \\ --
+local Iterations = 8
+local MAX_DT = 1/60 -- maximum physics step
+
+-- // Module \\ --
+local SpringModule = {}
+
+function SpringModule.create(mass, force, damping, speed)
+	local spring = {}
+	local self = setmetatable({}, spring)
+
+	self.Target = Vector3.new()
+	self.Position = Vector3.new()
+	self.Velocity = Vector3.new()
+
+	self.Mass = mass or 5
+	self.Force = force or 50
+	self.Damping = damping or 4
+	self.Speed = speed or 4
+
+	function spring.shove(force)
+		local x,y,z = force.X, force.Y, force.Z
+
+		if x ~= x or x == math.huge or x == -math.huge then x = 0 end
+		if y ~= y or y == math.huge or y == -math.huge then y = 0 end
+		if z ~= z or z == math.huge or z == -math.huge then z = 0 end
+
+		self.Velocity += Vector3.new(x,y,z)
+	end
+
+	local function simulate(step)
+		local scaledDelta = step * self.Speed / Iterations
+
+		for i = 1, Iterations do
+			local iterationForce = self.Target - self.Position
+			local acceleration = (iterationForce * self.Force) / self.Mass
+			acceleration -= self.Velocity * self.Damping
+
+			self.Velocity += acceleration * scaledDelta
+			self.Position += self.Velocity * scaledDelta
+		end
+	end
+
+	function spring.update(dt)
+		dt = dt or 1/60
+
+		while dt > 0 do
+			local step = math.min(dt, MAX_DT)
+			simulate(step)
+			dt -= step
+		end
+
+		return self.Position
+	end
+
+	return spring
+end
+
+return SpringModule
