@@ -1,1 +1,391 @@
+-- // Services \\ --
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PlayerService = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
+-- // Player \\ --
+local Player = PlayerService.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+local CurrentCamera = workspace.CurrentCamera
+
+local FrameworkGui : ScreenGui = PlayerGui:WaitForChild("FrameworkGui")
+
+local Character = nil
+local Humanoid : Humanoid = nil
+
+local IsSprinting = false
+
+-- // Variables \\ --
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+local AssetsFolder = ReplicatedStorage:WaitForChild("Assets")
+
+local ViewmodelTemplate = AssetsFolder:WaitForChild("Viewmodel")
+
+-- // Remotes \\ --
+local GetData = RemotesFolder:WaitForChild("Functions"):WaitForChild("GetData")
+local MeleeAttack = RemotesFolder:WaitForChild("Events"):WaitForChild("MeleeAttack")
+local MeleeBlock = RemotesFolder:WaitForChild("Events"):WaitForChild("MeleeBlock")
+
+-- // Modules \\ --
+local SpringModule = require(ModulesFolder:WaitForChild("Utils"):WaitForChild("SpringModule"))
+local GlobalTools = require(ModulesFolder:WaitForChild("Utils"):WaitForChild("GlobalTools"))
+local GlobalConfig = require(ModulesFolder:WaitForChild("Configs"):WaitForChild("GlobalConfig"))
+local InputController = require(ModulesFolder:WaitForChild("Utils"):WaitForChild("InputController"))
+local WeaponsConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Configs"):WaitForChild("Weapons"))
+local CharacterModule = require(script.Parent:WaitForChild("Character"))
+
+local CF_Manager = require(script:WaitForChild("CF_Manager"))
+local NormalizeLerp = require(script:WaitForChild("NormalizeLerp"))
+local BobbleCalc = require(script:WaitForChild("BobbleCalc"))
+local SwayCalc = require(script:WaitForChild("SwayCalc"))
+local CalcSprings = require(script:WaitForChild("CalcSprings"))
+local CooldownAnimations = require(script:WaitForChild("CooldownAnimations"))
+local Weld = require(script:WaitForChild("Weld"))
+local ToggleViewmodel = require(script:WaitForChild("ToggleViewmodel"))
+local Attack = require(script:WaitForChild("Attack"))
+
+local newInputManager = InputController.new()
+
+-- // Springs \\ --
+local CamShakeSpring = SpringModule.create(12, 25, 1.5, 10)
+local VMShakePosSpring = SpringModule.create(12, 25, 1.5, 10)
+local VMShakeRotSpring = SpringModule.create(12, 25, 1.5, 5)
+local VMBobPosSpring = SpringModule.create(7, 5, 0.75, 15)
+local VMBobRotSpring = SpringModule.create(7, 5, 0.75, 15)
+local VMSwayRotSpring = SpringModule.create(12, 15, 0.75, 15)
+local VMSwayPosSpring = SpringModule.create(12, 15, 0.75, 15)
+
+-- // Math \\ --
+local abs = math.abs
+local clamp = math.clamp
+local rad = math.rad
+local pi = math.pi
+
+local module = {
+	Framework = {
+		-- // General \\ --
+		Viewmodel = nil :: Model;
+		WeaponModel = nil :: Model;
+		EquippedWeapon = nil :: Model;
+		Animations = {
+			FirstPerson = {
+				Idle = nil;
+				Sprinting = nil;
+				Attacks = {
+					Light = {};
+					Heavy = {};
+					PlayInOrder = true;
+					LastLightAnim = nil;
+					LastHeavyAnim = nil;
+					CurrentAnimationPlaying = nil;
+				};
+				Block = nil
+			},
+		};
+		
+		Walkspeed = {
+			Base = 0;
+			Heavy = {
+				Speed = 0;
+				Duration = 0;
+			}
+		};
+		
+		Input = {
+			LeftClick = nil;
+			RightClick = nil;
+			Sprint = nil;
+			Block = nil;
+		};
+		
+		Cooldowns = {
+			LastAttack = {
+				Light = 0,
+				Heavy = 0,
+			};
+			
+			LastBlock = 0;
+			
+			Time = {
+				Light = 0;
+				Heavy = 0;
+			};
+			
+			IsAttacking = false;
+			IsBlocking = false;
+		};
+		
+		HitboxParams = {};
+		
+		VFX = {
+			Attacks = {
+				Light = {};
+				Heavy = {};
+			};
+			Block = nil
+		};
+	}
+}
+
+local function toggleViewmodel(bool : boolean)
+	if bool then
+		ToggleViewmodel:Toggle(true, module.Framework)
+		module:SetupInput()
+	else
+		ToggleViewmodel:FireServer(false, module.Framework)
+		module:ClearInput()
+	end
+end
+
+function module:CanAttack(attackType : string): boolean
+	local currentTime = tick()
+	local lastAttack = module.Framework.Cooldowns.LastAttack[attackType]
+	local currentCooldown = module.Framework.Cooldowns.Time[attackType]
+	local canAttack = not lastAttack or (currentTime - lastAttack >= currentCooldown)
+	
+	return (not module.Framework.Cooldowns.IsAttacking and not module.Framework.Cooldowns.IsBlocking and not Player:GetAttribute("Parried") and canAttack)
+end
+
+function module:CanBlock(): boolean
+	local lastBlock = module.Framework.Cooldowns.LastBlock
+	
+	return (not module.Framework.Cooldowns.IsAttacking and not module.Framework.Cooldowns.IsBlocking and not Player:GetAttribute("Parried") and (tick() - lastBlock >= GlobalConfig.BlockCooldown))
+end
+
+function module:ToggleSprinting(bool : boolean)
+	if module.Framework.Cooldowns.IsAttacking then return end
+	if module.Framework.Cooldowns.IsBlocking then return end
+	
+	IsSprinting = bool
+	
+	if IsSprinting then
+		CharacterModule:SetWalkspeed(module.Framework.Walkspeed.Base * GlobalConfig.SprintSpeedMulti, "sprintStart")
+	else
+		CharacterModule:SetWalkspeed(module.Framework.Walkspeed.Base, "sprintEnd")
+	end
+end
+
+function module:SetupInput()
+	module.Framework.Input.LeftClick = newInputManager:Bind(Enum.UserInputType.MouseButton1)
+	module.Framework.Input.RightClick = newInputManager:Bind(Enum.UserInputType.MouseButton2)
+	module.Framework.Input.Sprint = newInputManager:Bind(Enum.KeyCode.LeftShift)
+	module.Framework.Input.Block = newInputManager:Bind(Enum.KeyCode.F)
+
+	module.Framework.Input.LeftClick:Connect(function(began : boolean)
+		if began then
+			if not module:CanAttack("Light") then return end
+			
+			module:ToggleSprinting(false)
+			Attack:PerformAttack("Light", module.Framework)
+		end
+	end)
+
+	module.Framework.Input.RightClick:Connect(function(began : boolean)
+		if began then
+			if not module:CanAttack("Heavy") then return end
+			
+			module:ToggleSprinting(false)
+			Attack:PerformAttack("Heavy", module.Framework)
+		end
+	end)
+	
+	module.Framework.Input.Block :Connect(function(began : boolean)
+		if began then
+			if not module:CanBlock() then return end
+			
+			CooldownAnimations:PlayAnimation(FrameworkGui:WaitForChild("HUD"):WaitForChild("BottomLeft"):WaitForChild("BlockCooldown"), GlobalConfig.BlockCooldown)
+			module.Framework.Cooldowns.LastBlock = tick()
+			
+			module:ToggleSprinting(true)
+			IsSprinting = false
+			
+			module.Framework.Cooldowns.IsBlocking = true
+			CharacterModule:SetWalkspeed(GlobalConfig.BlockWalkspeed, "blockStart")
+			MeleeBlock:FireServer()
+			
+			print("blocking client")
+			
+			task.delay(GlobalConfig.BlockDuration + 0.5, function()
+				module.Framework.Cooldowns.IsBlocking = false
+				CharacterModule:SetWalkspeed(module.Framework.Walkspeed.Base, "blockEnd")
+			end)
+		end
+	end)
+	
+	module.Framework.Input.Sprint:Connect(function(began : boolean)
+		module:ToggleSprinting(began)
+	end)
+end
+
+function module:ClearInput()
+	InputController:DisconnectAll()
+end
+
+function module:GetSpringOffsets(dt): CFrame
+	return CalcSprings:GetTotal(dt, {
+		[1] = {
+			IsRotation = false,
+			Spring = VMBobPosSpring
+		},
+		[2] = {
+			IsRotation = true,
+			Spring = VMBobRotSpring
+		},
+		[3] = {
+			IsRotation = false,
+			Spring = VMSwayPosSpring
+		},
+		[4] = {
+			IsRotation = true,
+			Spring = VMSwayRotSpring
+		},
+		[5] = {
+			IsRotation = false,
+			Spring = VMShakePosSpring
+		},
+		[6] = {
+			IsRotation = true,
+			Spring = VMShakeRotSpring
+		},
+	})
+end
+
+function module:GetEquippedWeapon(): string
+	local playerData = GetData:InvokeServer()
+	
+	if not playerData then return nil end
+	
+	for weaponName, weaponData in playerData.Weapons do
+		if weaponData.Equipped then
+			return weaponName
+			--return "Claws"
+		end
+	end
+	
+	return nil
+end
+
+function module:OffsetCrosshair(udim2)
+	FrameworkGui:WaitForChild("Crosshair").Position = UDim2.fromScale(0.5, 0.5) + udim2
+end
+
+function module:Init()
+	module.Framework.EquippedWeapon = module:GetEquippedWeapon()
+	
+	local function GetRollAngle()
+		if Character and Humanoid then
+			local moveDirection = Humanoid.MoveDirection
+
+			if moveDirection and moveDirection.Magnitude > 0 then
+				local Cf = CurrentCamera.CFrame
+				local Value = -Cf.RightVector:Dot(moveDirection)
+
+				return Value
+			end
+		end
+
+		return 0
+	end
+	
+	local function onCharacterAdded(char)
+		if char then
+			Character = char
+			Humanoid = char:WaitForChild("Humanoid")
+			
+			Humanoid.StateChanged:Connect(function()
+				if Humanoid:GetState() == Enum.HumanoidStateType.Jumping or Humanoid:GetState() == Enum.HumanoidStateType.Landed then
+					VMShakePosSpring.shove(Vector3.new(0, -0.25, 0))
+					VMShakeRotSpring.shove(Vector3.new(-rad(15), 0, 0))
+				end
+			end)
+			
+			Humanoid.Died:Connect(function()
+				toggleViewmodel(false)
+			end)
+		end
+	end
+	
+	onCharacterAdded(Player.Character)
+	
+	Player.CharacterAdded:Connect(onCharacterAdded)
+	
+	RunService.RenderStepped:Connect(function(dt)
+		if module.Framework.Viewmodel and Humanoid then
+			local currentViewmodel : Model = module.Framework.Viewmodel
+
+			local inAir = Humanoid.FloorMaterial == Enum.Material.Air
+			
+			-- // Viewmodel Animaitons
+			local bobblePos, bobbleRot = BobbleCalc:GetBobble((Humanoid.MoveDirection.Magnitude < 0.1 or inAir), IsSprinting)
+			local swayPos, swayRot = SwayCalc:GetSway(CurrentCamera.CFrame, CF_Manager.LastCamCF)
+			
+			-- // Camera Animation
+			local vmCamCF = currentViewmodel:WaitForChild("Camera").CFrame
+			local vmCF = currentViewmodel:GetPivot()
+
+			local offset = vmCamCF:ToObjectSpace(vmCF)
+			local rx, ry, rz = offset:ToEulerAnglesXYZ()
+
+			local viewportSize = CurrentCamera.ViewportSize
+			local fov = math.rad(CurrentCamera.FieldOfView)
+
+			local pixelsPerRad = viewportSize.Y / (2 * math.tan(fov / 2))
+
+			local crosshairOffset = UDim2.fromOffset(
+				-math.tan(ry) * pixelsPerRad,
+				-math.tan(rx) * pixelsPerRad
+			)
+			
+			-- // Fall Animation
+			local rootPart = Character:WaitForChild("HumanoidRootPart")
+			local yVel = rootPart and rootPart.Velocity.Y or 0
+
+			local targetY = math.clamp(-yVel / 30, -2, 3)
+			
+			-- // Apply forces
+			VMSwayPosSpring.shove(swayPos)
+			VMSwayRotSpring.shove(swayRot)
+			VMBobPosSpring.shove(bobblePos + Vector3.new(0, -targetY/15, 0))
+			VMBobRotSpring.shove(bobbleRot + Vector3.new(rad(targetY), 0, rad(1 * GetRollAngle())))
+
+			local totalSpringOffset = module:GetSpringOffsets(dt)
+			
+			currentViewmodel:PivotTo(CurrentCamera.CFrame * totalSpringOffset * CF_Manager.EquipCF * CF_Manager.SprintCF)
+			
+			if module.Framework.Animations.FirstPerson.Attacks.CurrentAnimationPlaying == "Heavy" then
+				module:OffsetCrosshair(crosshairOffset)
+			else
+				module:OffsetCrosshair(UDim2.fromScale(0, 0))
+			end
+			
+			CurrentCamera.CFrame = CurrentCamera.CFrame * offset:ToObjectSpace(CF_Manager.OldCamOffsetCF)
+			
+			if IsSprinting then
+				CF_Manager.SprintCF = CF_Manager.SprintCF:Lerp(CFrame.new(0, -2.5, 0) * CFrame.Angles(rad(35), 0, 0), NormalizeLerp(0.3, dt))
+			else
+				CF_Manager.SprintCF = CF_Manager.SprintCF:Lerp(CFrame.new(), NormalizeLerp(0.1, dt))
+			end
+			
+			CF_Manager.OldCamOffsetCF = offset
+			CF_Manager.EquipCF = CF_Manager.EquipCF:Lerp(CFrame.new(), NormalizeLerp(0.05, dt))
+			CF_Manager.LastCamCF = CurrentCamera.CFrame
+
+			pcall(function()
+				module.Framework.Animations.FirstPerson.Idle:Play()
+			end)
+
+			for _, part in pairs(currentViewmodel:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = false
+				end
+			end
+		end
+	end)
+	
+	toggleViewmodel(true)
+end
+
+return module
