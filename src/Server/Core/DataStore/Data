@@ -176,7 +176,7 @@ local function stripSignals(tbl)
 end
 
 function module:Init()
-	remotes.Functions.GetData.OnServerInvoke = function(player)
+	RemotesFolder.Functions.GetData.OnServerInvoke = function(player)
 		local playerConfig = GlobalServer.players[player]
 		
 		if not playerConfig then
