@@ -1,0 +1,75 @@
+## How it works
+  • Saves the players previous position
+  • Simply raycasts between the positions to check for collision
+  • If there's collision, just set them back
+
+-- // Services \\ --
+local PlayerService = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+
+-- // Variables \\ --
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+
+-- // Modules \\ --
+local GlobalServer = require(ServerScriptService:WaitForChild("Init"):WaitForChild("Global"))
+
+-- // Init \\ --
+local module = {
+	lastPositions = {},
+}
+
+function module:Init()
+	PlayerService.PlayerAdded:Connect(function(player)
+		local function characterAdded(character)
+			if character then
+				local humanoid : Humanoid = character:WaitForChild("Humanoid")
+				
+				module.lastPositions[player] = character:WaitForChild("HumanoidRootPart").Position
+			end
+		end
+		
+		player.CharacterAdded:Connect(characterAdded)
+		
+		characterAdded(player.Character)
+	end)
+	
+	PlayerService.PlayerRemoving:Connect(function(player)
+		module.lastPositions[player] = nil
+	end)
+	
+	RunService.Heartbeat:Connect(function(delta)
+		for _, player in pairs(PlayerService:GetPlayers()) do
+			local character = player.Character
+			local humanoid : Humanoid = character and character:FindFirstChild("Humanoid")
+			local humanoidRootPart : Part = character and character:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and humanoidRootPart then
+				local currentPosition = humanoidRootPart.Position
+				local lastPosition = module.lastPositions[player]
+				
+				if not lastPosition then
+					continue
+				end
+				
+				local params = RaycastParams.new()
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				params.FilterDescendantsInstances = {character}
+				params.RespectCanCollide = true
+
+				local raycast = workspace:Raycast(lastPosition, currentPosition - lastPosition, params)
+				
+				if raycast then
+					humanoidRootPart.CFrame = CFrame.new(lastPosition)
+				end
+				
+				module.lastPositions[player] = currentPosition
+			end
+		end
+	end)
+end
+
+return module
