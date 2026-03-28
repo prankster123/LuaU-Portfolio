@@ -156,10 +156,6 @@ function module:PlayerRemoving(player)
 	
 	saveData(player, playerData, DataStore, false)
 	
-	DataStore:UpdateAsync(player, function(pastData)
-		return playerConfig.data
-	end)
-	
 	playerConfig = nil
 end
 
@@ -199,6 +195,13 @@ function module:Init()
 		
 		return stripSignals(playerData)
 	end
+	
+	game:BindToClose(function()
+		for _, player in Players:GetPlayers() do
+			module:PlayerRemoving(player)
+		end
+		task.wait(2)
+	end)
 end
 
 return module
