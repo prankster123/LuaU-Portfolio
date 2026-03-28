@@ -1,0 +1,27 @@
+local module = {}
+
+local function GetOffsetFromHandle(Rotation : Vector3)
+	local HandleOffset = Vector3.new(0, 0, 2)
+
+	return -(CFrame.new(HandleOffset) * CFrame.Angles(Rotation.X, Rotation.Y, Rotation.Z) * CFrame.new(-HandleOffset)).Position
+end
+
+function module:GetSway(camCF, lastCamCF): (Vector3, Vector3)
+	-- // Rot Calculation
+	local rot = camCF:ToObjectSpace(lastCamCF)
+	local X, Y, Z = rot:ToEulerAnglesXYZ()
+	local MaxX, MaxY, MaxZ = 0.03, 0.03, 0
+
+	-- // Update spring
+	local swayX = math.clamp(X * 0.1, -MaxX, MaxX)
+	local swayY = math.clamp(Y * 0.1, -MaxY, MaxY)
+	local swayZ = math.clamp(Z * 0, -MaxZ, MaxZ)
+
+	local sway = Vector3.new(swayX, swayY, swayZ)
+	
+	local offsetPosition = GetOffsetFromHandle(sway)
+	
+	return offsetPosition, sway
+end
+
+return module
