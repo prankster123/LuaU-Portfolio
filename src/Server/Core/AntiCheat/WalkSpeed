@@ -1,1 +1,166 @@
+## How it works
+  • Client sends the remote event to update their walkspeed based on an action, the server chooses final walkspeed.
+  • Client will set their walkspeed first to remove delay effects
+  • Server will follow after, and if a player is moving too fast on the horizontal axis, they are teleported to their previous position
 
+-- // Services \\ --
+local PlayerService = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+
+-- // Variables \\ --
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+
+-- // Modules \\ --
+local GlobalServer = require(ServerScriptService:WaitForChild("Init"):WaitForChild("Global"))
+local GlobalConfig = require(ModulesFolder:WaitForChild("Configs"):WaitForChild("GlobalConfig"))
+local WeaponsConfig = require(ModulesFolder:WaitForChild("Configs"):WaitForChild("Weapons"))
+
+-- // Remotes \\ --
+local UpdateMovement = RemotesFolder:WaitForChild("Events"):WaitForChild("UpdateMovement")
+
+-- // Init \\ --
+local module = {
+	walkspeedData = {}, -- [player] = {CurrentSpeed = 16}
+	lastPositions = {},
+}
+
+local function horizontalDistance(p1 : Vector3, p2 : Vector3): number
+	local distance = p2 - p1
+	
+	return Vector3.new(distance.X, 0, distance.Z).Magnitude
+end
+
+local function getPlayerWeapon(player : Player)
+	local playerData = GlobalServer.functions.getData(player)
+	
+	if not playerData then return nil end
+	
+	local playerWeapons = playerData.Weapons
+	
+	for weaponName, weaponData in playerWeapons do
+		if weaponData.Equipped then
+			return weaponName
+		end
+	end
+	
+	return nil
+end
+
+function module:UpdateWalkspeed(player, action, reason, newWalkspeed)
+	if action == "walkspeed" then
+		local playerWeapon = getPlayerWeapon(player)
+
+		if not playerWeapon then return end
+
+		local weaponData = WeaponsConfig[playerWeapon]
+
+		if not weaponData then return end
+
+		local weaponWalkspeedData = weaponData.Walkspeed
+		local weaponBaseWalkspeed = weaponWalkspeedData.Base
+		local currentTick = tick()
+		
+		if player:GetAttribute("Parried") == true then return end
+
+		if reason == "sprintStart" then
+			module.walkspeedData[player] = {CurrentSpeed = (weaponBaseWalkspeed * GlobalConfig.SprintSpeedMulti), ChangedAt = currentTick}
+		elseif reason == "sprintEnd" then
+			module.walkspeedData[player] = {CurrentSpeed = weaponBaseWalkspeed, ChangedAt = currentTick}
+		elseif reason == "equipping" then
+			module.walkspeedData[player] = {CurrentSpeed = weaponBaseWalkspeed, ChangedAt = currentTick}
+		elseif reason == "heavyAnimStart" then
+			module.walkspeedData[player] = {CurrentSpeed = weaponWalkspeedData.Heavy.Speed, ChangedAt = currentTick}
+		elseif reason == "heavyAnimEnd" then
+			module.walkspeedData[player] = {CurrentSpeed = weaponBaseWalkspeed, ChangedAt = currentTick}
+		elseif reason == "blockStart" then
+			module.walkspeedData[player] = {CurrentSpeed = GlobalConfig.BlockWalkspeed, ChangedAt = currentTick}
+		elseif reason == "blockEnd" then
+			module.walkspeedData[player] = {CurrentSpeed = weaponBaseWalkspeed, ChangedAt = currentTick}
+		elseif reason == "parryStart" then
+			module.walkspeedData[player] = {CurrentSpeed = GlobalConfig.BlockWalkspeed, ChangedAt = currentTick}
+		elseif reason == "parryEnd" then
+			module.walkspeedData[player] = {CurrentSpeed = weaponBaseWalkspeed, ChangedAt = currentTick}
+		end
+	end
+end
+
+UpdateMovement.OnServerEvent:Connect(function(player, action, reason, newWalkspeed)
+	module:UpdateWalkspeed(player, action, reason, newWalkspeed)
+end)
+
+function module:Init()
+	PlayerService.PlayerAdded:Connect(function(player)
+		local function characterAdded(character)
+			if character then
+				local humanoid : Humanoid = character:WaitForChild("Humanoid")
+				
+				module.lastPositions[player] = character:WaitForChild("HumanoidRootPart").Position
+			end
+		end
+		
+		player.CharacterAdded:Connect(characterAdded)
+		
+		characterAdded(player.Character)
+		
+		module.walkspeedData[player] = {CurrentSpeed = game:WaitForChild("StarterPlayer").CharacterWalkSpeed, ChangedAt = 0}
+	end)
+	
+	PlayerService.PlayerRemoving:Connect(function(player)
+		module.walkspeedData[player] = nil
+	end)
+	
+	RunService.Heartbeat:Connect(function(delta)
+		for _, player in pairs(PlayerService:GetPlayers()) do
+			local character = player.Character
+			local humanoid : Humanoid = character and character:FindFirstChild("Humanoid")
+			local humanoidRootPart : Part = character and character:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and humanoidRootPart then
+				local currentPosition = humanoidRootPart.Position
+				local walkspeedData = module.walkspeedData[player]
+				
+				if not walkspeedData then
+					continue
+				end
+				
+				local currentWalkspeed = walkspeedData.CurrentSpeed
+				
+				local timeSinceChange = tick() - (walkspeedData.ChangedAt or 0)
+				
+				if timeSinceChange < 0.2 then
+					module.lastPositions[player] = currentPosition
+					continue
+				end
+				
+				local maxWalkspeed = (currentWalkspeed + 5) * delta * 2
+				
+				--print(currentWalkspeed)
+				
+				local lastPosition = module.lastPositions[player]
+				
+				if not lastPosition then
+					lastPosition = currentPosition
+					module.lastPositions[player] = lastPosition
+					
+					continue
+				end
+				
+				local distance = horizontalDistance(lastPosition, currentPosition)
+				
+				if distance > maxWalkspeed then
+					humanoidRootPart.Position = lastPosition
+				else
+					module.lastPositions[player] = currentPosition
+				end
+				
+				--print(maxWalkspeed, distance)
+			end
+		end
+	end)
+end
+
+return module
