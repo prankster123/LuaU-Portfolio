@@ -1,3 +1,10 @@
+## How it works
+	• Utilizes the lag compensation module to fix players with higher ping
+	• Stores previous attack times for accurate cooldowns
+	• Hitbox excludes players out of a certain range for optimization
+	• Also excludes players out of a certain angle to prevent hits that look like they were from behind and also optimization
+	• Parry system if the victim was blocking (Parry just stuns the player for a few seconds)
+
 -- // Services \\ --
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -163,7 +170,7 @@ function module:Init()
 						end
 					end
 				end
-			end
+			en
 
 			--[[task.delay(2, function()
 				debugPart:Destroy()
@@ -190,19 +197,17 @@ function module:Init()
 				TriggerEffect:FireClient(player, "parried")
 				
 				if player.Character and player.Character:WaitForChild("Humanoid") then
-					pcall(function()
-						BlockEffect:PlayParryEffect(player)
-						
-						player:SetAttribute("Parried", true)
-						WalkspeedAntiCheat:UpdateWalkspeed(player, "walkspeed", "parryStart", 5)
-						player.Character:WaitForChild("Humanoid").WalkSpeed = 5
-						
-						task.wait(GlobalConfig.ParryStunTime)
-						
-						player:SetAttribute("Parried", false)
-						WalkspeedAntiCheat:UpdateWalkspeed(player, "walkspeed", "parryEnd", weaponData.Walkspeed.Base)
-						player.Character:WaitForChild("Humanoid").WalkSpeed = weaponData.Walkspeed.Base
-					end)
+					BlockEffect:PlayParryEffect(player)
+					
+					player:SetAttribute("Parried", true)
+					WalkspeedAntiCheat:UpdateWalkspeed(player, "walkspeed", "parryStart", 5)
+					player.Character:WaitForChild("Humanoid").WalkSpeed = 5
+					
+					task.wait(GlobalConfig.ParryStunTime)
+					
+					player:SetAttribute("Parried", false)
+					WalkspeedAntiCheat:UpdateWalkspeed(player, "walkspeed", "parryEnd", weaponData.Walkspeed.Base)
+					player.Character:WaitForChild("Humanoid").WalkSpeed = weaponData.Walkspeed.Base
 				end
 			end
 			
