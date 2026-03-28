@@ -1,0 +1,11 @@
+local ServerScriptService = game:GetService("ServerScriptService")
+local GlobalServer = require(ServerScriptService:WaitForChild("Init"):WaitForChild("Global"))
+
+return{
+	gamepassId = 00000,
+	activateOnJoin = true,
+	
+	execute = function(player : Player)
+		print("test")
+	end,
+}
