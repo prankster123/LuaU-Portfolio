@@ -1,3 +1,10 @@
+## Modularized Viewmodel System
+	• Attack system
+	• Bobble and swaying
+	• Animations
+	• Spring Physics
+	• CFrame Managers
+
 -- // Services \\ --
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PlayerService = game:GetService("Players")
