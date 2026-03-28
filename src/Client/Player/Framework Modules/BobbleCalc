@@ -1,0 +1,30 @@
+local module = {}
+
+function module:GetBobble(idle : boolean, sprinting : boolean) : (Vector3, Vector3)
+	local time = tick()
+	local intensity = idle and 0.25 or (sprinting and 1 or 0.5)
+	local speed = idle and 0.1 or (sprinting and 3 or 2)
+	local strength = 0.1
+
+	-- frequencies
+	local posFreq = 8 * speed
+	local rotFreq = 10 * speed
+
+	-- position bob
+	local posX = math.sin(time * posFreq) * 0.05 * intensity
+	local posY = math.cos(time * posFreq * 2) * 0.04 * intensity
+	local posZ = math.sin(time * posFreq * 0.5) * 0.02 * intensity
+
+	local positionBob = Vector3.new(posX, posY, posZ)
+
+	-- rotation bob (in degrees)
+	local rotX = math.cos(time * rotFreq) * 0.6 * intensity
+	local rotY = math.sin(time * rotFreq * 0.5) * 0.8 * intensity
+	local rotZ = math.sin(time * rotFreq) * 0.5 * intensity
+
+	local rotationBob = Vector3.new(rotX, rotY, rotZ)
+
+	return positionBob * strength, (rotationBob/3) * strength * (not idle and 0.5 or 1)
+end
+
+return module
