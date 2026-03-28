@@ -1,3 +1,9 @@
+## How it works
+	• Client sets the walkspeed first to show no delay
+	• Sends a remote event promptly after to update walkspeed based on their reason
+	• Server will decide the final walkspeed, making sure client can't fake a walkspeed amount
+	• Sets the player back if their horizontal velocity is too high
+
 -- // Services \\ --
 local PlayerService = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,7 +25,7 @@ local UpdateMovement = RemotesFolder:WaitForChild("Events"):WaitForChild("Update
 
 -- // Init \\ --
 local module = {
-	walkspeedData = {}, -- [player] = {CurrentSpeed = 16}
+	walkspeedData = {}, -- [player] = {CurrentSpeed = 16, ChangedAt = time}
 	lastPositions = {},
 }
 
