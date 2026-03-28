@@ -1,1 +1,30 @@
+-- // Services \\ --
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 
+-- // Modules \\ --
+local AnimModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Utils"):WaitForChild("ButtonAnimations"))
+
+local module = {}
+
+function module:Init()
+	for _, screenGui in pairs(CollectionService:GetTagged("ButtonAnimations")) do
+		-- // Loop through all the buttons \\ --
+		for _, ui:GuiButton in pairs(screenGui:GetDescendants()) do
+			if ui:IsA("GuiButton") then
+				task.spawn(function()
+					AnimModule:InitButton(ui)
+				end)
+			end
+		end
+		
+		-- // Descendants Added \\ --
+		screenGui.DescendantAdded:Connect(function(ui)
+			if ui:IsA("GuiButton") then
+				AnimModule:InitButton(ui)
+			end
+		end)
+	end
+end
+
+return module
