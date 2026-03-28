@@ -1,0 +1,22 @@
+local module = {}
+
+function module:GetTotal(delta, springs): CFrame
+	local total = CFrame.new()
+	
+	for _, springData in pairs(springs) do
+		local isRotation = springData.IsRotation
+		local spring = springData.Spring
+		
+		local springVector3 = spring.update(delta)
+		
+		if isRotation then
+			total *= CFrame.Angles(springVector3.X, springVector3.Y, springVector3.Z)
+		else
+			total += springVector3
+		end
+	end
+	
+	return total
+end
+
+return module
