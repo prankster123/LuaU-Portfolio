@@ -1,1 +1,127 @@
+-- // Services \\ --
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PlayerService = game:GetService("Players")
 
+-- // Player \\ --
+local Player = PlayerService.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+local CurrentCamera = workspace.CurrentCamera
+
+-- // Variables \\ --
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+local AssetsFolder = ReplicatedStorage:WaitForChild("Assets")
+
+local FrameworkGui = PlayerGui:WaitForChild("FrameworkGui")
+local ViewmodelTemplate = AssetsFolder:WaitForChild("Viewmodel")
+
+-- // Modules \\ --
+local WeaponsConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Configs"):WaitForChild("Weapons"))
+local CharacterModule = require(script.Parent.Parent:WaitForChild("Character"))
+
+local CooldownAnimations = require(script.Parent:WaitForChild("CooldownAnimations"))
+
+-- // Remotes \\ --
+local MeleeAttack = RemotesFolder:WaitForChild("Events"):WaitForChild("MeleeAttack")
+
+local module = {}
+
+local finishTask = nil
+local attackToken = 0
+
+function module:StopAllAnimations(framework)
+	local viewmodel = framework.Viewmodel
+
+	if not viewmodel then return end
+
+	local humanoid = viewmodel:WaitForChild("Humanoid")
+	local animator = humanoid:WaitForChild("Animator")
+
+	for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+		track:Stop(0)
+	end
+end
+
+function module:GetAttackAnimation(attackType : string, framework)
+	local attackData = framework.Animations.FirstPerson.Attacks
+	local animTable = attackData[attackType]
+
+	if not animTable then return nil end
+
+	if attackData.PlayInOrder then
+		local key = "Last" .. attackType .. "Anim"
+		local lastAnim = attackData[key] or 0
+		local nextAnim = lastAnim + 1
+
+		if nextAnim > #animTable then
+			nextAnim = 1
+		end
+
+		attackData[key] = nextAnim
+		return animTable[nextAnim], nextAnim
+	else
+		local index = math.random(1, #animTable)
+		return animTable[index], index
+	end
+end
+
+function module:PerformAttack(attackType : string, framework)
+	local anim : AnimationTrack, orderKey = module:GetAttackAnimation(attackType, framework)
+	MeleeAttack:FireServer({time = os.clock(), type = attackType, animKey = orderKey})
+	framework.Cooldowns.IsAttacking = true
+	CooldownAnimations:PlayAnimation(FrameworkGui:WaitForChild("HUD"):WaitForChild("BottomLeft"):WaitForChild(attackType.."Cooldown"), framework.Cooldowns.Time[attackType])
+
+	local totalAttackTime = (framework.HitboxParams[attackType].Windup + framework.HitboxParams[attackType].Active + framework.HitboxParams[attackType].Recovery)
+
+	module:StopAllAnimations(framework)
+
+	if attackType == "Heavy" then
+		task.spawn(function()
+			pcall(function()
+				CharacterModule:SetWalkspeed(framework.Walkspeed.Heavy.Speed, "heavyAnimStart")
+				task.wait(framework.Walkspeed.Heavy.Duration)
+				CharacterModule:SetWalkspeed(framework.Walkspeed.Base, "heavyAnimEnd")
+			end)
+		end)
+	end
+
+	if not anim then return end
+
+	local vfx = framework.VFX.Attacks[attackType]
+	if vfx then
+		local currentVFX = vfx[orderKey]
+		if currentVFX then
+			task.spawn(function()
+				currentVFX(framework.Viewmodel, framework.WeaponModel)
+			end)
+		end
+	end
+
+	local currentTick = tick()
+	framework.Cooldowns.LastAttack[attackType] = currentTick
+
+	task.delay(totalAttackTime, function()
+		framework.Cooldowns.IsAttacking = false
+	end)
+
+	anim:Play(0, 100)
+	framework.Animations.FirstPerson.Attacks.CurrentAnimationPlaying = attackType
+
+	attackToken += 1
+	local myToken = attackToken
+
+	if finishTask then
+		task.cancel(finishTask)
+	end
+
+	finishTask = task.spawn(function()
+		anim.Ended:Wait()
+		if attackToken == myToken then
+			framework.Animations.FirstPerson.Idle:Play()
+			framework.Animations.FirstPerson.Attacks.CurrentAnimationPlaying = nil
+		end
+	end)
+end
+
+return module
