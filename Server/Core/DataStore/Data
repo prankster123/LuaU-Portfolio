@@ -8,7 +8,6 @@ local Players = game:GetService('Players')
 local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
 local RemotesFolder = ReplicatedStorage:WaitForChild("Remotes")
 
-local DataStore = DataStoreService:GetDataStore('PlayerData'..templatesModule.datastoreVersion)
 
 -- // Modules \\ -
 local GlobalServer = require(script.Parent.Global)
@@ -17,6 +16,8 @@ local GoodSignal = require(ModulesFolder:WaitForChild("Services"):WaitForChild("
 
 local dataTemplate = Templates.dataTemplate
 local orderedDataTemplate = Templates.orderedDataTemplate
+
+local DataStore = DataStoreService:GetDataStore('PlayerData'..Templates.datastoreVersion)
 
 local instances = {
 	['number'] = 'NumberValue',
