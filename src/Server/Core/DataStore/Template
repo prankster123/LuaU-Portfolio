@@ -1,0 +1,39 @@
+## How it works
+  • Datastore version to change datastore
+  • Changes datastore if you're in studio
+  • Value is the base for new players
+  • Public makes the stat show on the leaderboard or stay a background value
+
+local DataStoreService = game:GetService('DataStoreService')
+
+local globalModule = require(script.Parent.Parent.Global)
+local functions = globalModule.functions
+
+local DatastoreVersion = 'V1' -- update if you want to reset ALL datastores. if you need an old one back just simply revert it.
+local isStudio = game:GetService('RunService'):IsStudio()
+
+if isStudio then
+	DatastoreVersion = 'Studio1.'..DatastoreVersion -- seperate studio data and in game data
+end
+
+return {
+	dataTemplate = {
+		Example = "abc"
+	},
+
+	orderedDataTemplate = {
+		['TimePlayed'] = {
+			value = 0,
+			public = false,
+			store = DataStoreService:GetOrderedDataStore('TimePlayed'..DatastoreVersion)
+		},
+    
+		['Money'] = {
+			value = 0,
+			public = true,
+			store = DataStoreService:GetOrderedDataStore('Money'..DatastoreVersion)
+		},
+	},
+	
+	datastoreVersion = DatastoreVersion,
+}
