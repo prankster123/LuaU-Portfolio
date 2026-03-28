@@ -1,0 +1,163 @@
+-- // Services \\ --
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local PlayerService = game:GetService("Players")
+
+-- // Player \\ --
+local Player = PlayerService.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+local CurrentCamera = workspace.CurrentCamera
+
+-- // Variables \\ --
+local ModulesFolder = ReplicatedStorage:WaitForChild("Modules")
+local AssetsFolder = ReplicatedStorage:WaitForChild("Assets")
+
+local FrameworkGui = PlayerGui:WaitForChild("FrameworkGui")
+local ViewmodelTemplate = AssetsFolder:WaitForChild("Viewmodel")
+
+-- // Modules \\ --
+local WeaponsConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Configs"):WaitForChild("Weapons"))
+local CharacterModule = require(script.Parent.Parent:WaitForChild("Character"))
+
+local Weld = require(script.Parent:WaitForChild("Weld"))
+local CF_Manager = require(script.Parent:WaitForChild("CF_Manager"))
+
+local module = {}
+
+local function newAnimation(viewmodel : Model): Animation
+	local newAnim = Instance.new("Animation")
+	newAnim.Parent = viewmodel
+
+	return newAnim
+end
+
+function module:Toggle(bool : boolean, framework)
+	local Character = Player.Character
+	local Humanoid = Character:WaitForChild("Humanoid")
+	
+	if not Character or not Humanoid or not framework then return end
+	
+	if (bool) then
+		local equippedWeapon = framework.EquippedWeapon
+
+		if not equippedWeapon then return end
+
+		local newViewmodel = ViewmodelTemplate:Clone()
+		newViewmodel.Parent = CurrentCamera
+
+		local success, error = pcall(function()
+			if Character and Humanoid then
+				local shirt = Character:FindFirstChildOfClass("Shirt")
+				local rightArmColor = Character:WaitForChild("Right Arm").Color
+				local leftArmColor = Character:WaitForChild("Left Arm").Color
+
+				if shirt then
+					shirt:Clone().Parent = newViewmodel
+				end
+
+				newViewmodel:WaitForChild("Right Arm").Color = rightArmColor
+				newViewmodel:WaitForChild("Left Arm").Color = leftArmColor
+			end
+		end)
+
+		framework.Viewmodel = newViewmodel
+		Player.CameraMode = Enum.CameraMode.LockFirstPerson
+
+		CF_Manager.EquipCF = CFrame.new(0, -10, 0)
+
+		local weaponData = WeaponsConfig[equippedWeapon]
+		local weaponModel : Model = AssetsFolder:WaitForChild("Weapons"):WaitForChild("FirstPerson"):FindFirstChild(equippedWeapon)
+
+		if not weaponData then return end
+		if not weaponModel then return end
+
+		weaponModel = weaponModel:Clone()
+
+		weaponModel.Parent = newViewmodel
+		framework.WeaponModel = weaponModel
+
+		if weaponData.TwoHanded then
+			local Left : Model = weaponModel:WaitForChild("L")
+			local Right : Model = weaponModel:WaitForChild("R")
+
+			Left:PivotTo(newViewmodel:WaitForChild("HandleL").CFrame)
+			Right:PivotTo(newViewmodel:WaitForChild("HandleR").CFrame)
+
+			Weld:Weld(Left, newViewmodel:WaitForChild("HandleL"))
+			Weld:Weld(Right, newViewmodel:WaitForChild("HandleR"))
+		else
+			weaponModel:PivotTo(newViewmodel:WaitForChild("HandleR").CFrame)
+
+			Weld:Weld(weaponModel, newViewmodel:WaitForChild("HandleR"))
+		end
+
+		local idleAnim = newAnimation(weaponModel)
+		idleAnim.AnimationId = weaponData.Animations.FirstPerson.Idle
+
+		local blockAnim = newAnimation(weaponModel)
+		blockAnim.AnimationId = weaponData.Animations.FirstPerson.Block
+
+		local attackAnims = {
+			Light = {};
+			Heavy = {};
+		}
+
+		for _, id in pairs(weaponData.Animations.FirstPerson.Attacks.Light) do
+			local newAnim = newAnimation(weaponModel)
+			newAnim.AnimationId = id
+			table.insert(attackAnims.Light, newAnim)
+		end
+
+		for _, id in pairs(weaponData.Animations.FirstPerson.Attacks.Heavy) do
+			local newAnim = newAnimation(weaponModel)
+			newAnim.AnimationId = id
+			table.insert(attackAnims.Heavy, newAnim)
+		end
+
+		local idleTrack = newViewmodel:WaitForChild("Humanoid"):WaitForChild("Animator"):LoadAnimation(idleAnim)
+		local blockTrack = newViewmodel:WaitForChild("Humanoid"):WaitForChild("Animator"):LoadAnimation(blockAnim)
+
+		local attackTracks = {}
+
+		for _, anim in pairs(attackAnims.Light) do
+			table.insert(framework.Animations.FirstPerson.Attacks.Light, newViewmodel:WaitForChild("Humanoid"):WaitForChild("Animator"):LoadAnimation(anim))
+		end
+
+		for _, anim in pairs(attackAnims.Heavy) do
+			table.insert(framework.Animations.FirstPerson.Attacks.Heavy, newViewmodel:WaitForChild("Humanoid"):WaitForChild("Animator"):LoadAnimation(anim))
+		end
+
+		framework.Animations.FirstPerson.Idle = idleTrack
+		framework.Animations.FirstPerson.Block = blockTrack
+
+		local highlight = Instance.new("Highlight")
+		highlight.FillTransparency = 1
+		highlight.OutlineTransparency = 0
+		highlight.OutlineColor = Color3.fromRGB(0, 0, 0)
+		highlight.Parent = newViewmodel
+
+		framework.Animations.FirstPerson.Attacks.LastLightAnim = nil
+		framework.Animations.FirstPerson.Attacks.LastHeavyAnim = nil
+		framework.Cooldowns.Time = weaponData.Cooldowns
+		framework.HitboxParams = weaponData.HitboxParams
+		framework.Walkspeed = weaponData.Walkspeed
+
+		framework.VFX = weaponData.VFX.Client
+
+		FrameworkGui.Enabled = true
+		UserInputService.MouseIconEnabled = false
+
+		CharacterModule:SetWalkspeed(framework.Walkspeed.Base, "equipping")
+	else
+		if framework.Viewmodel then framework.Viewmodel:Destroy() end
+
+		framework.Viewmodel = nil
+		Player.CameraMode = Enum.CameraMode.Classic
+		
+		FrameworkGui.Enabled = false
+		UserInputService.MouseIconEnabled = true
+	end
+end
+
+return module
