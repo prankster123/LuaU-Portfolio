@@ -11,6 +11,7 @@ local GoodSignal = require(ModulesFolder:WaitForChild("Services"):WaitForChild("
 local InputController = {}
 InputController.__index = InputController
 
+-- // Helpers
 function InputController.new()
 	local self = setmetatable({}, InputController)
 	
@@ -39,12 +40,12 @@ function InputController:Bind(inputEnum)
 	return self:_getSignal(inputEnum)
 end
 
--- // Init \\ --
+-- // Main
 function InputController:_init()
 	-- InputBegan
 	table.insert(self._connections,
-		UserInputService.InputBegan:Connect(function(input, gpe)
-			if gpe then return end
+		UserInputService.InputBegan:Connect(function(input, gameprocessed)
+			if gameprocessed then return end
 
 			local key = input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode or input.UserInputType
 			self._held[key] = true
@@ -74,7 +75,6 @@ function InputController:IsHeld(inputEnum)
 	return self._held[inputEnum] or false
 end
 
--- // Disconnect one RBX connection \\ --
 function InputController:Disconnect(conn)
 	for i, v in ipairs(self._connections) do
 		if v == conn then
@@ -85,7 +85,6 @@ function InputController:Disconnect(conn)
 	end
 end
 
--- // Full cleanup \\ --
 function InputController:DisconnectAll()
 	-- RBX connections
 	for _, conn in ipairs(self._connections) do
